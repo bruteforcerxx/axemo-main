@@ -1380,6 +1380,6 @@ def thr():
     thread4.start()
 
 
-thread = Thread(target=funding_manager_luno)
-thread.start()
+home()
+thr()
 root.mainloop()
