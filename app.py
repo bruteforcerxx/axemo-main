@@ -8,12 +8,6 @@ import time
 from tkinter import messagebox
 
 
-api_key = "qllinMZsWKJxMbm1"
-secret_key = "O8166FUvpXgZk5XowalRE8cP0tVXRWkT"
-coinbase_id = "98d51393-b7bf-5381-b727-21200c515708"
-client = Client(api_key, secret_key)
-
-
 file_1 = open('axemo_bal.json', 'r')
 bt_bal = json.load(file_1)
 file_1.close()
@@ -561,6 +555,17 @@ def confirm_det(am_btc, am_ngn, dest, desc, fee, route):
 
     def check_price():
         print('checking conversion rate...')
+
+        get_id = open('coinbase_funded_keys.json', 'r')
+        id = json.load(get_id)
+        get_id.close()
+
+        use_id = id[0]
+
+        secret = use_id[0]
+        cb_key = use_id[1]
+
+        client = Client(cb_key, secret)
         price = client.get_buy_price(currency_pair='BTC-NGN')
 
         if am_btc:
@@ -675,9 +680,16 @@ def create_address():
     id = json.load(get_id)
     get_id.close()
 
-    use_id = id[0][2]
+    use_id = id[0]
 
-    address = client.create_address(use_id)
+    print(f'using key pair {use_id}...')
+    secret = use_id[0]
+    cb_key = use_id[1]
+    cb_id = use_id[2]
+
+    client = Client(cb_key, secret)
+
+    address = client.create_address(cb_id)
     address = [address['address']]
     print(address)
 
@@ -944,8 +956,8 @@ def send_coinbase(btc, address, desc, fee):
 
 
 def funding_manager_luno(trial):
-
     print('\n############LUNO FUNDING##############')
+
     if trial < 5:
         try:
             file_a = open('luno_awaiting_fund.json', 'r')
@@ -1456,6 +1468,17 @@ def check_btc_price():
     while True:
         print('\nchecking exchange rates...\n')
         global naira
+
+        get_id = open('coinbase_funded_keys.json', 'r')
+        id = json.load(get_id)
+        get_id.close()
+
+        use_id = id[0]
+
+        secret = use_id[0]
+        cb_key = use_id[1]
+
+        client = Client(cb_key, secret)
         price = client.get_buy_price(currency_pair='BTC-NGN')
         ng = float(bt_bal) * float(price['amount'])
         naira = ng
