@@ -2,11 +2,11 @@ from coinbase.wallet.client import Client
 from tkinter import *
 from tkinter.ttk import *
 from threading import Thread
-import queue
 import json
 import requests
 import time
 from tkinter import messagebox
+
 
 api_key = "qllinMZsWKJxMbm1"
 secret_key = "O8166FUvpXgZk5XowalRE8cP0tVXRWkT"
@@ -724,6 +724,7 @@ def address_():
 
 
 def send_to_luno(btc, address, desc):
+    print('#################SEND TO LUNO###################')
     global in_use
     global sent
     amount = str(btc)
@@ -790,7 +791,7 @@ def send_to_luno(btc, address, desc):
             file_a = open('luno_awaiting_fund.json', 'r')
             awaiting_keys = json.load(file_a)
             file_a.close()
-            awaiting_keys.append(keys[0])
+            awaiting_keys.insert(0, keys[0])
 
             file_update = open('luno_awaiting_fund.json', 'w')
             json.dump(awaiting_keys, file_update)
@@ -806,8 +807,10 @@ def send_to_luno(btc, address, desc):
 
             print('waiting for 1 second...')
             time.sleep(1)
+            trials = [0]
 
-            funding_manager_luno(0)
+            thread_l = Thread(target=funding_manager_luno, args=trials)
+            thread_l.start()
 
             print('retrying transaction...')
             send_to_luno(btc, address, desc)
@@ -824,7 +827,7 @@ def send_to_luno(btc, address, desc):
 
 
 def send_coinbase(btc, address, desc, fee):
-    print('###############################################')
+    print('####################SEND TO COINBASE###########################')
 
     global sent
     try:
@@ -916,7 +919,7 @@ def send_coinbase(btc, address, desc, fee):
             file_a = open('coinbase_awaiting_fund.json', 'r')
             awaiting_keys = json.load(file_a)
             file_a.close()
-            awaiting_keys.append(keys[0])
+            awaiting_keys.insert(0, keys[0])
 
             file_update = open('coinbase_awaiting_fund.json', 'w')
             json.dump(awaiting_keys, file_update)
@@ -932,14 +935,17 @@ def send_coinbase(btc, address, desc, fee):
             print('waiting for 5 seconds...')
             time.sleep(1)
 
-            funding_manager_coinbase(0)
+            trials = [0]
+            thread_c = Thread(target=funding_manager_coinbase, args=trials)
+            thread_c.start()
 
             print('retrying transaction...\n')
             send_coinbase(btc, address, desc, fee)
 
 
 def funding_manager_luno(trial):
-    print('\n########COINBASE FUNDING##############')
+
+    print('\n############LUNO FUNDING##############')
     if trial < 5:
         try:
             file_a = open('luno_awaiting_fund.json', 'r')
@@ -950,6 +956,7 @@ def funding_manager_luno(trial):
 
             a = time.time()
             print(f'luno non_funded keys detected\n')
+            print(f'trial {trial}\n')
 
             file_update = open('luno_funded_keys.json', 'r')
             funded = json.load(file_update)
@@ -969,23 +976,27 @@ def funding_manager_luno(trial):
 
             print(f'checking balance of luno funded keys...')
 
-            for i in funded:
-                payload = {'asset': 'XBT'}
-                r = requests.get('https://api.mybitx.com/api/1/balance', params=payload)
-                rs = requests.get(r.url, auth=(i[1], i[0])).json()
-                balance = float(rs['balance'][0]['balance'])
-                print(balance)
-                time.sleep(10)
-                balance_sheet_w_id.append([i[0], i[1], balance])
-                balance_list.append(balance)
-                print(f'balance of {i} = {balance}')
+            if len(funded) > 0:
+                for i in funded:
+                    payload = {'asset': 'XBT'}
+                    r = requests.get('https://api.mybitx.com/api/1/balance', params=payload)
+                    rs = requests.get(r.url, auth=(i[1], i[0])).json()
+                    balance = float(rs['balance'][0]['balance'])
+                    time.sleep(10)
+                    balance_sheet_w_id.append([i[0], i[1], balance])
+                    balance_list.append(balance)
+                    print(f'balance of {i} = {balance}')
 
-            max_bal = max(balance_list)
-            print(max_bal)
-            index = balance_list.index(max_bal)
-            use_key = balance_sheet_w_id[index]
+                max_bal = max(balance_list)
+                print(f'\nmax balance = {max_bal}\n')
+                index = balance_list.index(max_bal)
+                use_key = balance_sheet_w_id[index]
+                print(f'using key: {use_key}...\n')
+            else:
+                print('\n!!!!!no funded keys available!!!!!\n')
+                use_key = [0.000, 0.000, 0.000]
 
-            print(f'\n{float(use_key[2])}    {float(old_bal)} \n')
+            print(f'{float(use_key[2])}    {float(old_bal)} \n')
 
             if float(use_key[2]) > float(old_bal):
                 print('trying to initiate re-funding with luno...\n')
@@ -1017,8 +1028,22 @@ def funding_manager_luno(trial):
                         file_remove = open('luno_awaiting_fund.json', 'w')
                         json.dump(awaiting_keys_2, file_remove)
                         file_remove.close()
+
+                        file_update = open('luno_funded_keys.json', 'r')
+                        funded = json.load(file_update)
+                        file_update.close()
+
+                        funded.append(x)
+
+                        file_update = open('luno_funded_keys.json', 'w')
+                        json.dump(funded, file_update)
+                        file_update.close()
+                        time.sleep(1)
+
+                        b = time.time()
+                        print(f'luno funded keys transfer time: {b - a}\n\n')
                     else:
-                        funding_manager_luno()
+                        funding_manager_luno(trial + 1)
 
                 except Exception as e:
                     print(e)
@@ -1027,13 +1052,14 @@ def funding_manager_luno(trial):
             else:
                 print('insufficient funds in all luno keys\n')
                 print('retrying re-funding with coinbase...\n')
-                payload = {'asset': 'XBT'}
                 print(f'getting address of {x}...\n')
+
+                payload = {'asset': 'XBT'}
                 r = requests.get('https://api.mybitx.com/api/1/funding_address', params=payload)
                 rs = requests.get(r.url, auth=(x[1], x[0])).json()
                 btc_address = rs['address']
 
-                print(f'btc address {btc_address}')
+                print(f'btc address of {x}:  {btc_address}\n')
 
                 cb_funded = open('coinbase_funded_keys.json', 'r')
                 funded = json.load(cb_funded)
@@ -1052,20 +1078,19 @@ def funding_manager_luno(trial):
                     balance_lst.append(bal)
                     print(f'balance of {a}: {bal}\n')
 
-                print(f'balance list: {balance_lst}')
                 cb_max_bal = max(balance_lst)
-                print(f'max balance in all coinbase accounts = {cb_max_bal}')
                 ind = balance_lst.index(cb_max_bal)
                 use_key = cb_balance_sheet_w_id[ind]
 
+                print(f'balance list: {balance_lst}')
+                print(f'max balance in all coinbase accounts = {cb_max_bal}\n')
+
                 try:
-                    print('trying to initiate re-funding with coinbase...')
+                    print('trying to initiate re-funding with coinbase...\n')
 
                     amount = cb_max_bal / 2
                     amount = f"{amount:.8f}"
-                    print(amount)
-                    print('PASS')
-                    print(f'btc address {btc_address}')
+                    print(f'btc address of {x} = {btc_address}')
 
                     client_b = Client(use_key[1], use_key[0])
                     tx = client_b.send_money(use_key[2], to=btc_address, amount=amount, currency='BTC')
@@ -1076,7 +1101,6 @@ def funding_manager_luno(trial):
                         suc.append(k)
                         suc.append(v)
 
-                    print(suc)
                     if 'completed' in suc:
                         file_a = open('coinbase_awaiting_fund.json', 'r')
                         awaiting_keys_2 = json.load(file_a)
@@ -1087,6 +1111,29 @@ def funding_manager_luno(trial):
                         file_remove = open('coinbase_awaiting_fund.json', 'w')
                         json.dump(awaiting_keys_2, file_remove)
                         file_remove.close()
+
+                        w = old_bal
+
+                        while w == old_bal:
+                            payload = {'asset': 'XBT'}
+                            r = requests.get('https://api.mybitx.com/api/1/balance', params=payload)
+                            rs = requests.get(r.url, auth=(x[1], x[0])).json()
+                            w = float(rs['balance'][0]['balance'])
+                            time.sleep(900)
+
+                        file_update = open('luno_funded_keys.json', 'r')
+                        funded = json.load(file_update)
+                        file_update.close()
+
+                        funded.append(x)
+
+                        file_update = open('luno_funded_keys.json', 'w')
+                        json.dump(funded, file_update)
+                        file_update.close()
+                        time.sleep(1)
+
+                        b = time.time()
+                        print(f'luno funded keys transfer time: {b - a}\n\n')
                     else:
                         funding_manager_luno(trial + 1)
 
@@ -1095,39 +1142,25 @@ def funding_manager_luno(trial):
                     time.sleep(5)
                     funding_manager_luno(trial + 1)
 
-            file_update = open('luno_funded_keys.json', 'r')
-            funded = json.load(file_update)
-            file_update.close()
-
-            funded.append(x)
-
-            file_update = open('luno_funded_keys.json', 'w')
-            json.dump(funded, file_update)
-            file_update.close()
-            time.sleep(1)
-
-            b = time.time()
-            print(f'luno funded keys transfer time: {b - a}\n\n')
-
         except Exception as e:
             print(e)
             time.sleep(5)
             funding_manager_luno(trial + 1)
 
     else:
-        print('maximum trials exceded')
+        print('maximum trials exceeded')
 
 
 def funding_manager_coinbase(trial):
-    print('\n########COINBASE FUNDING##############')
+    print('\n###########COINBASE FUNDING##############')
+
     if trial < 5:
         try:
+            print(f'trial: {trial}')
 
             file_a = open('coinbase_awaiting_fund.json', 'r')
             a_f = json.load(file_a)
             file_a.close()
-
-            print(a_f)
 
             x = a_f[0]
 
@@ -1148,37 +1181,37 @@ def funding_manager_coinbase(trial):
             cb_balance_sheet_w_id = []
             balance_lst = []
 
-            print(f'checking balance of luno funded keys...\n')
+            print(f'\nchecking balance of luno funded keys...')
 
-            for a in funded:
-                print(f'checking {a}...')
-                client_a = Client(a[1], a[0])
-                account = client_a.get_account('BTC')
-                bal = float(account['balance']['amount'])
-                cb_balance_sheet_w_id.append([a[0], a[1], a[2], bal])
-                balance_lst.append(bal)
-                print(f'balance of {a}: {bal}\n')
+            if len(funded) > 0:
+                for a in funded:
+                    print(f'checking {a}...')
+                    client_a = Client(a[1], a[0])
+                    account = client_a.get_account('BTC')
+                    bal = float(account['balance']['amount'])
+                    cb_balance_sheet_w_id.append([a[0], a[1], a[2], bal])
+                    balance_lst.append(bal)
+                    print(f'balance of {a}: {bal}\n')
 
-            print(cb_balance_sheet_w_id)
-            print(balance_lst)
-
-            max_bal = max(balance_lst)
-            print(max_bal)
-            index = balance_lst.index(max_bal)
-            use_key = cb_balance_sheet_w_id[index]
-            print(use_key)
+                max_bal = max(balance_lst)
+                print(f'\nmax balance = {max_bal}\n')
+                index = balance_lst.index(max_bal)
+                use_key = cb_balance_sheet_w_id[index]
+                print(f'\nusing key: {use_key}...\n')
+            else:
+                print('\n!!!!!no funded keys available!!!!!')
+                use_key = [0.000, 0.000, 0.000]
 
             print(f'\n{float(use_key[3])}    {float(old_bal)} \n')
 
             if float(use_key[3]) > float(old_bal):
-
                 print('trying to initiate re-funding with coinbase..\n')
+
                 try:
-                    amount = max_bal / 2
-                    amount = f"{amount:.8f}"
+                    amount = float(use_key[3]) / 2
+                    amt = f"{amount:.8f}"
                     print(amount)
-                    print('PASS')
-                    print(f'btc address {x[2]}')
+                    print(f'sending {amt} to {x[3]}...\n')
 
                     client_b = Client(use_key[1], use_key[0])
                     tx = client_b.send_money(use_key[2], to=x[3], amount=amount, currency='BTC')
@@ -1191,77 +1224,6 @@ def funding_manager_coinbase(trial):
 
                     print(suc)
                     if 'completed' in suc:
-                        file_a = open('coinbase_awaiting_fund.json', 'r')
-                        awaiting_keys_2 = json.load(file_a)
-                        file_a.close()
-
-                        awaiting_keys_2.remove(x)
-
-                        file_remove = open('coinbase_awaiting_fund.json', 'w')
-                        json.dump(awaiting_keys_2, file_remove)
-                        file_remove.close()
-                    else:
-                        funding_manager_coinbase()
-
-                except Exception as e:
-                    print(e)
-                    funding_manager_coinbase(trial + 1)
-
-            else:
-                print('insufficient funds in all coinbase keys\n')
-                print('retrying re-funding with luno...\n')
-
-                client = Client(use_key[1], use_key[0])
-                address = client.create_address(coinbase_id)
-                address = address['address']
-
-                print(f'btc address {address}')
-
-                cb_funded = open('luno_funded_keys.json', 'r')
-                funded = json.load(cb_funded)
-                cb_funded.close()
-
-                balance_sheet_w_id = []
-                balance_list = []
-
-                print('checking balance in all luno accounts...\n')
-                for i in funded:
-                    print('#############################')
-                    payload = {'asset': 'XBT'}
-                    r = requests.get('https://api.mybitx.com/api/1/balance', params=payload)
-                    rs = requests.get(r.url, auth=(i[1], i[0])).json()
-                    balance = float(rs['balance'][0]['balance'])
-                    balance_sheet_w_id.append([i[0], i[1], balance])
-                    balance_list.append(balance)
-                    print(f'balance of luno keys: {i} = {balance}')
-
-                print(f'balance list: {balance_list}')
-                cb_max_bal = max(balance_list)
-                print(f'max balance in all luno accounts = {cb_max_bal}')
-                ind = balance_list.index(cb_max_bal)
-                use_key = balance_sheet_w_id[ind]
-                print('**************************************')
-                print(x)
-                try:
-                    print('trying to initiate re-funding with luno...')
-
-                    amount_rf = float(use_key[2]) / 2
-                    amount_rf = f"{amount_rf:.8f}"
-                    amt_rf = str(amount_rf)
-                    print(amt_rf)
-
-                    payload = {'amount': amt_rf, 'currency': 'XBT', 'address': address,
-                               'description': 're-fundinng process'}
-                    print(f'Transferring {amount_rf} to account: {address}')
-                    s = requests.get('https://api.mybitx.com/api/1/send', params=payload)
-                    r_f = requests.post(s.url, auth=(use_key[1], use_key[0])).json()
-                    print(r_f)
-
-                    suc = []
-                    for k, v in r_f.items():
-                        suc.append(k)
-                        suc.append(v)
-                    if 'success' in suc:
                         file_a = open('coinbase_awaiting_fund.json', 'r')
                         awaiting_keys_2 = json.load(file_a)
                         file_a.close()
@@ -1289,7 +1251,100 @@ def funding_manager_coinbase(trial):
                         funding_manager_coinbase(trial + 1)
 
                 except Exception as e:
-                    print('####################################***********')
+                    print(e)
+                    funding_manager_coinbase(trial + 1)
+
+            else:
+                print('insufficient funds in all coinbase keys\n')
+                print('retrying re-funding with luno...\n')
+                print(f'getting address of {x}...\n')
+
+                client = Client(use_key[1], use_key[0])
+                address = client.create_address(use_key[2])
+                address = address['address']
+
+                print(f'btc address of {x}:  {address}\n')
+
+                cb_funded = open('luno_funded_keys.json', 'r')
+                funded = json.load(cb_funded)
+                cb_funded.close()
+
+                balance_sheet_w_id = []
+                balance_list = []
+
+                print('checking balance in all luno accounts...\n')
+                for i in funded:
+                    payload = {'asset': 'XBT'}
+                    r = requests.get('https://api.mybitx.com/api/1/balance', params=payload)
+                    rs = requests.get(r.url, auth=(i[1], i[0])).json()
+                    balance = float(rs['balance'][0]['balance'])
+                    balance_sheet_w_id.append([i[0], i[1], balance])
+                    balance_list.append(balance)
+                    print(f'balance of luno keys: {i} = {balance}\n')
+
+                cb_max_bal = max(balance_list)
+                ind = balance_list.index(cb_max_bal)
+                use_key = balance_sheet_w_id[ind]
+
+                print(f'balance list: {balance_list}')
+                print(f'max balance in all luno accounts = {cb_max_bal}\n')
+
+                try:
+                    print('trying to initiate re-funding with luno...\n')
+
+                    amount_rf = float(use_key[2]) / 2
+                    amount_rf = f"{amount_rf:.8f}"
+                    amt_rf = str(amount_rf)
+
+                    print(f'Transferring {amount_rf} to account: {address}\n')
+
+                    payload = {'amount': amt_rf, 'currency': 'XBT', 'address': address,
+                               'description': 're-fundinng process'}
+                    s = requests.get('https://api.mybitx.com/api/1/send', params=payload)
+                    r_f = requests.post(s.url, auth=(use_key[1], use_key[0])).json()
+                    print(r_f)
+
+                    suc = []
+                    for k, v in r_f.items():
+                        suc.append(k)
+                        suc.append(v)
+
+                    if 'success' in suc:
+                        file_a = open('coinbase_awaiting_fund.json', 'r')
+                        awaiting_keys_2 = json.load(file_a)
+                        file_a.close()
+
+                        awaiting_keys_2.remove(x)
+
+                        file_remove = open('coinbase_awaiting_fund.json', 'w')
+                        json.dump(awaiting_keys_2, file_remove)
+                        file_remove.close()
+
+                        w = old_bal
+
+                        while w == old_bal:
+                            client_a = Client(x[1], x[0])
+                            account = client_a.get_account('BTC')
+                            w = float(account['balance']['amount'])
+                            time.sleep(900)
+
+                        file_update = open('coinbase_funded_keys.json', 'r')
+                        funded = json.load(file_update)
+                        file_update.close()
+
+                        funded.append(x)
+
+                        file_update = open('coinbase_funded_keys.json', 'w')
+                        json.dump(funded, file_update)
+                        file_update.close()
+                        time.sleep(1)
+
+                        b = time.time()
+                        print(f'coinbase funded keys transfer time: {b - a}\n\n')
+                    else:
+                        funding_manager_coinbase(trial + 1)
+
+                except Exception as e:
                     print(e)
                     funding_manager_coinbase(trial + 1)
 
@@ -1399,7 +1454,7 @@ def tx_list_thread():
 
 def check_btc_price():
     while True:
-        print('checking exchange rates...\n')
+        print('\nchecking exchange rates...\n')
         global naira
         price = client.get_buy_price(currency_pair='BTC-NGN')
         ng = float(bt_bal) * float(price['amount'])
@@ -1414,6 +1469,6 @@ def thr():
     thread4.start()
 
 
-home()
 thr()
+home()
 root.mainloop()
