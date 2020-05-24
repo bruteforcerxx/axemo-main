@@ -681,6 +681,16 @@ def create_address():
     address = [address['address']]
     print(address)
 
+    pending = open('addresses.json', 'r')
+    public_ads = json.load(pending)
+    pending.close()
+
+    public_ads.append([address[0], 'demo_user'])
+
+    pending = open('addresses.json', 'w')
+    json.dump(public_ads, pending)
+    pending.close()
+
     temp_address = open('copy_address.json', 'w')
     json.dump(address, temp_address)
     temp_address.close()
@@ -706,7 +716,6 @@ def copy():
 
 
 def address_():
-    value = queue.Queue()
     thread_a = Thread(target=create_address_page)
     thread_b = Thread(target=create_address)
 
@@ -1324,6 +1333,23 @@ def tx_list_thread():
         bal = float(data[2])
         if bal > 0.00000000:
             print(f'CREDIT ALERT! OF {data[2]}btc FROM {data[3]}\n')
+
+            pending = open('addresses.json', 'r')
+            public_ads = json.load(pending)
+            pending.close()
+
+            for a in public_ads:
+                if a[0] == data[2]:
+                    file = open('axemo_bal.json', 'r')
+                    old_bal = json.load(file)
+                    file.close()
+
+                    new_bal = float(old_bal) + float(data[2])
+
+                    file = open('axemo_bal.json', 'w')
+                    json.dump(new_bal, file)
+                    file.close()
+
             final_receive_data_save(data)
 
     def final_receive_data_save(f_list):
